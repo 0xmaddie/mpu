@@ -73,6 +73,7 @@ export class Shape {
 }
 
 export type ShapeLike = number[] | Shape;
+export type BufferLike = number[] | Float64Array;
 
 export class Matrix extends Ob {
   _shape: Shape;
@@ -497,7 +498,7 @@ export class MatrixBuffer {
 
   constructor(
     shape: ShapeLike,
-    buffer?: Float64Array | number[],
+    buffer?: BufferLike,
   ) {
     if (shape instanceof Shape) {
       this.shape = shape;
@@ -535,7 +536,7 @@ export class MatrixBuffer {
     }
   }
 
-  set(values: number[] | Float64Array): void {
+  set(values: BufferLike): void {
     for (let i = 0; i < values.length; ++i) {
       this.buffer[i] = values[i];
     }
@@ -690,7 +691,7 @@ export class MatrixBuffer {
 export type RunOperator =
   | { opcode: "zero"; dst: MatrixBuffer }
   | { opcode: "one"; dst: MatrixBuffer }
-  | { opcode: "constant"; dst: MatrixBuffer; buffer: number[] | Float64Array }
+  | { opcode: "constant"; dst: MatrixBuffer; buffer: BufferLike; }
   | { opcode: "dual"; src: MatrixBuffer; dst: MatrixBuffer }
   | { opcode: "relu"; src: MatrixBuffer; dst: MatrixBuffer }
   | { opcode: "cos"; src: MatrixBuffer; dst: MatrixBuffer }
@@ -818,7 +819,7 @@ export class Env {
 
   constant(
     shape: ShapeLike,
-    buffer: number[] | Float64Array,
+    buffer: BufferLike,
   ): Matrix {
     const dst = this.allocate(shape);
     const run: RunOperator = {
