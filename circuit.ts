@@ -72,13 +72,19 @@ export class Shape {
   }
 }
 
+export type ShapeLike = number[] | Shape;
+
 export class Matrix extends Ob {
   _shape: Shape;
   _uid: number;
 
-  constructor(shape: Shape, uid: number) {
+  constructor(shape: ShapeLike, uid: number) {
     super();
-    this._shape = shape;
+    if (shape instanceof Shape) {
+      this._shape = shape;
+    } else {
+      this._shape = new Shape(shape[0], shape[1]);
+    }
     this._uid = uid;
   }
 
@@ -147,16 +153,16 @@ export abstract class Circuit {
     return new Braid();
   }
 
-  static zero(shape: Shape): Circuit {
+  static zero(shape: ShapeLike): Circuit {
     return new Operator("zero", shape);
   }
 
-  static one(shape: Shape): Circuit {
+  static one(shape: ShapeLike): Circuit {
     return new Operator("one", shape);
   }
 
   static constant(
-    shape: Shape,
+    shape: ShapeLike,
     value: number[],
   ): Circuit {
     return new Operator("constant", shape, value);
@@ -169,7 +175,7 @@ export abstract class Circuit {
   }
 
   static randomUniform(
-    shape: Shape,
+    shape: ShapeLike,
     min: number,
     max: number,
   ): Circuit {
@@ -298,7 +304,7 @@ export class Operator extends Circuit {
       case "zero": {
         Ob.assertUnit(src);
         const [shape] = this.parameter;
-        if (shape instanceof Shape) {
+        if (Array.isArray(shape) || shape instanceof Shape) {
           return ctx.zero(shape);
         }
         throw new ParameterError(this);
@@ -306,7 +312,7 @@ export class Operator extends Circuit {
       case "one": {
         Ob.assertUnit(src);
         const [shape] = this.parameter;
-        if (shape instanceof Shape) {
+        if (Array.isArray(shape) || shape instanceof Shape) {
           return ctx.one(shape);
         }
         throw new ParameterError(this);
@@ -315,7 +321,7 @@ export class Operator extends Circuit {
         Ob.assertUnit(src);
         const [shape, values] = this.parameter;
         if (
-          shape instanceof Shape &&
+          (Array.isArray(shape) || shape instanceof Shape) &&
           Array.isArray(values)
         ) {
           return ctx.constant(shape, values);
@@ -326,7 +332,7 @@ export class Operator extends Circuit {
         Ob.assertUnit(src);
         const [shape, min, max] = this.parameter;
         if (
-          shape instanceof Shape &&
+          (Array.isArray(shape) || shape instanceof Shape) &&
           typeof(min) === "number" &&
           typeof(max) === "number"
         ) {
@@ -455,7 +461,7 @@ export class MatrixBuffer {
   buffer: Float32Array;
 
   constructor(
-    shape: Shape | [number, number],
+    shape: ShapeLike,
     buffer?: Float32Array | number[],
   ) {
     if (shape instanceof Shape) {
@@ -649,7 +655,7 @@ export class Env {
     this.data = [];
   }
 
-  allocate(shape: Shape): Matrix {
+  allocate(shape: ShapeLike): Matrix {
     const uid = this.data.length;
     const dst = new Matrix(shape, uid);
     const buf = new MatrixBuffer(shape);
@@ -671,7 +677,7 @@ export class Env {
     }
   }
 
-  zero(shape: Shape): Matrix {
+  zero(shape: ShapeLike): Matrix {
     const dst = this.allocate(shape);
     const thunk = () => {
       const dst_buf = this.load(dst);
@@ -681,7 +687,7 @@ export class Env {
     return dst;
   }
 
-  one(shape: Shape): Matrix {
+  one(shape: ShapeLike): Matrix {
     const dst = this.allocate(shape);
     const thunk = () => {
       const dst_buf = this.load(dst);
@@ -692,7 +698,7 @@ export class Env {
   }
 
   constant(
-    shape: Shape,
+    shape: ShapeLike,
     buffer: number[] | Float32Array,
   ): Matrix {
     const dst = this.allocate(shape);
@@ -782,7 +788,7 @@ export class Env {
   }
 
   randomUniform(
-    shape: Shape,
+    shape: ShapeLike,
     min: number,
     max: number,
   ): Matrix {
