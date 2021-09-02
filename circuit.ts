@@ -155,6 +155,19 @@ export abstract class Circuit {
     return new Operator("one", shape);
   }
 
+  static constant(
+    shape: Shape,
+    value: number[],
+  ): Circuit {
+    return new Operator("constant", shape, value);
+  }
+
+  static sumk(
+    k: number,
+  ): Circuit {
+    return new Operator("sumk", k);
+  }
+
   static randomUniform(
     shape: Shape,
     min: number,
@@ -171,12 +184,32 @@ export abstract class Circuit {
     return new Operator("relu");
   }
 
+  static get cos(): Circuit {
+    return new Operator("cos");
+  }
+
+  static get sin(): Circuit {
+    return new Operator("sin");
+  }
+
+  static get cis(): Circuit {
+    return new Operator("cis");
+  }
+
+  static get sic(): Circuit {
+    return new Operator("sic");
+  }
+
   static get add(): Circuit {
     return new Operator("add");
   }
 
   static get mul(): Circuit {
     return new Operator("mul");
+  }
+
+  static get point(): Circuit {
+    return new Operator("point");
   }
 
   static get drop(): Circuit {
@@ -223,21 +256,33 @@ export class Braid extends Circuit {
 export type Opcode =
   | "zero"
   | "one"
+  | "constant"
   | "dual"
   | "relu"
+  | "cos"
+  | "sin"
+  | "cis"
+  | "sic"
+  | "sumk"
   | "add"
   | "mul"
+  | "point"
   | "drop"
   | "copy"
   | "randomUniform"
 
+export type Parameter =
+  | number
+  | number[]
+  | Shape
+
 export class Operator extends Circuit {
   name: Opcode;
-  parameter: (number | Shape)[];
+  parameter: Parameter[];
 
   constructor(
     name: Opcode,
-    ...parameter: (number | Shape)[]
+    ...parameter: Parameter[]
   ) {
     super();
     this.name = name;
@@ -266,6 +311,17 @@ export class Operator extends Circuit {
         }
         throw new ParameterError(this);
       }
+      case "constant": {
+        Ob.assertUnit(src);
+        const [shape, values] = this.parameter;
+        if (
+          shape instanceof Shape &&
+          Array.isArray(values)
+        ) {
+          return ctx.constant(shape, values);
+        }
+        throw new ParameterError(this);
+      }
       case "randomUniform": {
         Ob.assertUnit(src);
         const [shape, min, max] = this.parameter;
@@ -284,11 +340,42 @@ export class Operator extends Circuit {
       case "relu": {
         return ctx.relu(src.asMatrix);
       }
+      case "cos": {
+        return ctx.cos(src.asMatrix);
+      }
+      case "sin": {
+        return ctx.sin(src.asMatrix);
+      }
+      case "cis": {
+        return ctx.cis(src.asMatrix);
+      }
+      case "sic": {
+        return ctx.sic(src.asMatrix);
+      }
+      case "sumk": {
+        const [k] = this.parameter;
+        if (typeof(k) === "number") {
+          return ctx.sumk(src.asMatrix, k);
+        }
+        throw new ParameterError(this);
+      }
       case "add": {
-        return ctx.add(src.fst.asMatrix, src.snd.asMatrix);
+        return ctx.add(
+          src.fst.asMatrix,
+          src.snd.asMatrix,
+        );
       }
       case "mul": {
-        return ctx.mul(src.fst.asMatrix, src.snd.asMatrix);
+        return ctx.mul(
+          src.fst.asMatrix,
+          src.snd.asMatrix,
+        );
+      }
+      case "point": {
+        return ctx.point(
+          src.fst.asMatrix,
+          src.snd.asMatrix,
+        );
       }
       case "drop": {
         Ob.assertMatrix(src);
@@ -434,6 +521,50 @@ export class MatrixBuffer {
     }
   }
 
+  cos(src: MatrixBuffer): void {
+    if (!(this.shape.equals(src.shape))) {
+      throw new ShapeError("cos", this, src);
+    }
+    for (let i = 0; i < this.shape.capacity; ++i) {
+      this.buffer[i] = Math.cos(src.buffer[i]);
+    }
+  }
+
+  sin(src: MatrixBuffer): void {
+    if (!(this.shape.equals(src.shape))) {
+      throw new ShapeError("sin", this, src);
+    }
+    for (let i = 0; i < this.shape.capacity; ++i) {
+      this.buffer[i] = Math.sin(src.buffer[i]);
+    }
+  }
+
+  cis(src: MatrixBuffer): void {
+    if (!(this.shape.equals(src.shape))) {
+      throw new ShapeError("cis", this, src);
+    }
+    for (let i = 0; i < this.shape.capacity; ++i) {
+      if ((i%2) === 0) {
+        this.buffer[i] = Math.cos(src.buffer[i]);
+      } else {
+        this.buffer[i] = Math.sin(src.buffer[i]);
+      }
+    }
+  }
+
+  sic(src: MatrixBuffer): void {
+    if (!(this.shape.equals(src.shape))) {
+      throw new ShapeError("sic", this, src);
+    }
+    for (let i = 0; i < this.shape.capacity; ++i) {
+      if ((i%2) === 0) {
+        this.buffer[i] = Math.sin(src.buffer[i]);
+      } else {
+        this.buffer[i] = Math.cos(src.buffer[i]);
+      }
+    }
+  }
+
   add(fst: MatrixBuffer, snd: MatrixBuffer): void {
     if (
       !(this.shape.equals(fst.shape)) ||
@@ -461,6 +592,35 @@ export class MatrixBuffer {
           const rhs = snd.buffer[dot*snd.width+col];
           this.buffer[row*this.width+col] += lhs * rhs;
         }
+      }
+    }
+  }
+
+  point(fst: MatrixBuffer, snd: MatrixBuffer): void {
+    if (
+      !(this.shape.equals(fst.shape)) ||
+      !(this.shape.equals(snd.shape))
+    ) {
+      throw new ShapeError("point", this, fst, snd);
+    }
+    for (let i = 0; i < this.shape.capacity; ++i) {
+      this.buffer[i] = fst.buffer[i] * snd.buffer[i];
+    }
+  }
+
+  sumk(src: MatrixBuffer, k: number): void {
+    if (!(this.shape.equals(src.shape))) {
+      throw new ShapeError("sumk", this, src);
+    }
+    let sum = 0;
+    for (let i = 0; i < this.shape.capacity; ++i) {
+      sum += src.buffer[i];
+    }
+    for (let i = 0; i < this.shape.capacity; ++i) {
+      if (i === k) {
+        this.buffer[i] = sum;
+      } else {
+        this.buffer[i] = 0;
       }
     }
   }
@@ -531,6 +691,19 @@ export class Env {
     return dst;
   }
 
+  constant(
+    shape: Shape,
+    buffer: number[] | Float32Array,
+  ): Matrix {
+    const dst = this.allocate(shape);
+    const thunk = () => {
+      const dst_buf = this.load(dst);
+      dst_buf.buffer = new Float32Array(buffer);
+    };
+    this.schedule(thunk);
+    return dst;
+  }
+
   dual(src: Matrix): Matrix {
     const dst = this.allocate(src.shape);
     const thunk = () => {
@@ -548,6 +721,61 @@ export class Env {
       const src_buf = this.load(src);
       const dst_buf = this.load(dst);
       dst_buf.relu(src_buf);
+    };
+    this.schedule(thunk);
+    return dst;
+  }
+
+  cos(src: Matrix): Matrix {
+    const dst = this.allocate(src.shape);
+    const thunk = () => {
+      const src_buf = this.load(src);
+      const dst_buf = this.load(dst);
+      dst_buf.cos(src_buf);
+    };
+    this.schedule(thunk);
+    return dst;
+  }
+
+  sin(src: Matrix): Matrix {
+    const dst = this.allocate(src.shape);
+    const thunk = () => {
+      const src_buf = this.load(src);
+      const dst_buf = this.load(dst);
+      dst_buf.sin(src_buf);
+    };
+    this.schedule(thunk);
+    return dst;
+  }
+  
+  cis(src: Matrix): Matrix {
+    const dst = this.allocate(src.shape);
+    const thunk = () => {
+      const src_buf = this.load(src);
+      const dst_buf = this.load(dst);
+      dst_buf.cis(src_buf);
+    };
+    this.schedule(thunk);
+    return dst;
+  }
+
+  sic(src: Matrix): Matrix {
+    const dst = this.allocate(src.shape);
+    const thunk = () => {
+      const src_buf = this.load(src);
+      const dst_buf = this.load(dst);
+      dst_buf.sic(src_buf);
+    };
+    this.schedule(thunk);
+    return dst;
+  }
+
+  sumk(src: Matrix, k: number): Matrix {
+    const dst = this.allocate(src.shape);
+    const thunk = () => {
+      const src_buf = this.load(src);
+      const dst_buf = this.load(dst);
+      dst_buf.sumk(src_buf, k);
     };
     this.schedule(thunk);
     return dst;
@@ -586,6 +814,18 @@ export class Env {
       const snd_buf = this.load(snd);
       const dst_buf = this.load(dst);
       dst_buf.mul(fst_buf, snd_buf);
+    };
+    this.schedule(thunk);
+    return dst;
+  }
+
+  point(fst: Matrix, snd: Matrix): Matrix {
+    const dst = this.allocate(fst.shape);
+    const thunk = () => {
+      const fst_buf = this.load(fst);
+      const snd_buf = this.load(snd);
+      const dst_buf = this.load(dst);
+      dst_buf.point(fst_buf, snd_buf);
     };
     this.schedule(thunk);
     return dst;
