@@ -60,7 +60,7 @@ export class Shape {
   }
 
   get capacity(): number {
-    return this._height*this._width;
+    return this._height * this._width;
   }
 
   equals(rhs: Shape): boolean {
@@ -143,8 +143,19 @@ export class Pair extends Ob {
 }
 
 export abstract class Circuit {
+  seq(rhs: Circuit): Circuit {
+    if (rhs instanceof Id) {
+      return this;
+    }
+    return new Sequence(this, rhs);
+  }
+
+  par(rhs: Circuit): Circuit {
+    return new Parallel(this, rhs);
+  }
+
   abstract apply(src: Ob, ctx: Env): Ob;
-  
+
   static get id(): Circuit {
     return new Id();
   }
@@ -180,6 +191,14 @@ export abstract class Circuit {
     max: number,
   ): Circuit {
     return new Operator("randomUniform", shape, min, max);
+  }
+
+  static get ui(): Circuit {
+    return new Operator("ui");
+  }
+
+  static get ue(): Circuit {
+    return new Operator("ue");
   }
 
   static get dual(): Circuit {
@@ -260,6 +279,8 @@ export class Braid extends Circuit {
 }
 
 export type Opcode =
+  | "ui"
+  | "ue"
   | "zero"
   | "one"
   | "constant"
@@ -275,12 +296,12 @@ export type Opcode =
   | "point"
   | "drop"
   | "copy"
-  | "randomUniform"
+  | "randomUniform";
 
 export type Parameter =
   | number
   | number[]
-  | Shape
+  | Shape;
 
 export class Operator extends Circuit {
   name: Opcode;
@@ -301,6 +322,13 @@ export class Operator extends Circuit {
 
   apply(src: Ob, ctx: Env): Ob {
     switch (this.name) {
+      case "ui": {
+        return Ob.pair(src, Ob.unit);
+      }
+      case "ue": {
+        Ob.assertUnit(src.snd);
+        return src.fst;
+      }
       case "zero": {
         Ob.assertUnit(src);
         const [shape] = this.parameter;
@@ -333,8 +361,8 @@ export class Operator extends Circuit {
         const [shape, min, max] = this.parameter;
         if (
           (Array.isArray(shape) || shape instanceof Shape) &&
-          typeof(min) === "number" &&
-          typeof(max) === "number"
+          typeof (min) === "number" &&
+          typeof (max) === "number"
         ) {
           return ctx.randomUniform(shape, min, max);
         }
@@ -360,7 +388,7 @@ export class Operator extends Circuit {
       }
       case "sumk": {
         const [k] = this.parameter;
-        if (typeof(k) === "number") {
+        if (typeof (k) === "number") {
           return ctx.sumk(src.asMatrix, k);
         }
         throw new ParameterError(this);
@@ -417,6 +445,13 @@ export class Sequence extends Circuit {
     return this._snd;
   }
 
+  seq(rhs: Circuit): Circuit {
+    if (rhs instanceof Id) {
+      return this;
+    }
+    return this.fst.seq(this.snd.seq(rhs));
+  }
+
   apply(src: Ob, ctx: Env): Ob {
     const inner = this.fst.apply(src, ctx);
     return this.snd.apply(inner, ctx);
@@ -458,11 +493,11 @@ export class Parallel extends Circuit {
 
 export class MatrixBuffer {
   shape: Shape;
-  buffer: Float32Array;
+  buffer: Float64Array;
 
   constructor(
     shape: ShapeLike,
-    buffer?: Float32Array | number[],
+    buffer?: Float64Array | number[],
   ) {
     if (shape instanceof Shape) {
       this.shape = shape;
@@ -470,9 +505,9 @@ export class MatrixBuffer {
       this.shape = new Shape(shape[0], shape[1]);
     }
     if (buffer) {
-      this.buffer = new Float32Array(buffer);
+      this.buffer = new Float64Array(buffer);
     } else {
-      this.buffer = new Float32Array(this.capacity);
+      this.buffer = new Float64Array(this.capacity);
     }
   }
 
@@ -500,10 +535,16 @@ export class MatrixBuffer {
     }
   }
 
+  set(values: number[] | Float64Array): void {
+    for (let i = 0; i < values.length; ++i) {
+      this.buffer[i] = values[i];
+    }
+  }
+
   randomUniform(min: number, max: number): void {
-    const delta = max-min;
+    const delta = max - min;
     for (let i = 0; i < this.capacity; ++i) {
-      this.buffer[i] = min+Math.random()*delta;
+      this.buffer[i] = min + Math.random() * delta;
     }
   }
 
@@ -513,7 +554,7 @@ export class MatrixBuffer {
     }
     for (let row = 0; row < this.height; ++row) {
       for (let col = 0; col < this.width; ++col) {
-        this.buffer[row*this.width+col] = src.buffer[col*src.width+row];
+        this.buffer[row * this.width + col] = src.buffer[col * src.width + row];
       }
     }
   }
@@ -523,7 +564,7 @@ export class MatrixBuffer {
       throw new ShapeError("relu", this, src);
     }
     for (let i = 0; i < this.shape.capacity; ++i) {
-      this.buffer[i] = src.buffer[i] > 0? src.buffer[i] : 0;
+      this.buffer[i] = src.buffer[i] > 0 ? src.buffer[i] : 0;
     }
   }
 
@@ -550,7 +591,7 @@ export class MatrixBuffer {
       throw new ShapeError("cis", this, src);
     }
     for (let i = 0; i < this.shape.capacity; ++i) {
-      if ((i%2) === 0) {
+      if ((i % 2) === 0) {
         this.buffer[i] = Math.cos(src.buffer[i]);
       } else {
         this.buffer[i] = Math.sin(src.buffer[i]);
@@ -563,7 +604,7 @@ export class MatrixBuffer {
       throw new ShapeError("sic", this, src);
     }
     for (let i = 0; i < this.shape.capacity; ++i) {
-      if ((i%2) === 0) {
+      if ((i % 2) === 0) {
         this.buffer[i] = Math.sin(src.buffer[i]);
       } else {
         this.buffer[i] = Math.cos(src.buffer[i]);
@@ -593,10 +634,10 @@ export class MatrixBuffer {
     }
     for (let row = 0; row < fst.height; ++row) {
       for (let dot = 0; dot < fst.width; ++dot) {
-        const lhs = fst.buffer[row*fst.width+dot];
+        const lhs = fst.buffer[row * fst.width + dot];
         for (let col = 0; col < snd.width; ++col) {
-          const rhs = snd.buffer[dot*snd.width+col];
-          this.buffer[row*this.width+col] += lhs * rhs;
+          const rhs = snd.buffer[dot * snd.width + col];
+          this.buffer[row * this.width + col] += lhs * rhs;
         }
       }
     }
@@ -646,8 +687,29 @@ export class MatrixBuffer {
   }
 }
 
+export type RunOperator =
+  | { opcode: "zero"; dst: MatrixBuffer }
+  | { opcode: "one"; dst: MatrixBuffer }
+  | { opcode: "constant"; dst: MatrixBuffer; buffer: number[] | Float64Array }
+  | { opcode: "dual"; src: MatrixBuffer; dst: MatrixBuffer }
+  | { opcode: "relu"; src: MatrixBuffer; dst: MatrixBuffer }
+  | { opcode: "cos"; src: MatrixBuffer; dst: MatrixBuffer }
+  | { opcode: "sin"; src: MatrixBuffer; dst: MatrixBuffer }
+  | { opcode: "cis"; src: MatrixBuffer; dst: MatrixBuffer }
+  | { opcode: "sic"; src: MatrixBuffer; dst: MatrixBuffer }
+  | { opcode: "sumk"; src: MatrixBuffer; dst: MatrixBuffer; k: number }
+  | { opcode: "randomUniform"; dst: MatrixBuffer; min: number; max: number }
+  | { opcode: "add"; dst: MatrixBuffer; fst: MatrixBuffer; snd: MatrixBuffer }
+  | { opcode: "mul"; dst: MatrixBuffer; fst: MatrixBuffer; snd: MatrixBuffer }
+  | {
+    opcode: "point";
+    dst: MatrixBuffer;
+    fst: MatrixBuffer;
+    snd: MatrixBuffer;
+  };
+
 export class Env {
-  code: (() => void)[];
+  code: RunOperator[];
   data: MatrixBuffer[];
 
   constructor() {
@@ -663,8 +725,8 @@ export class Env {
     return dst;
   }
 
-  schedule(thunk: () => void) {
-    this.code.push(thunk);
+  schedule(run: RunOperator): void {
+    this.code.push(run);
   }
 
   load(pointer: Matrix): MatrixBuffer {
@@ -672,118 +734,177 @@ export class Env {
   }
 
   execute(): void {
-    for (const thunk of this.code) {
-      thunk();
+    for (const inst of this.code) {
+      switch (inst.opcode) {
+        case "zero": {
+          inst.dst.zero();
+          break;
+        }
+        case "one": {
+          inst.dst.one();
+          break;
+        }
+        case "constant": {
+          inst.dst.buffer.set(inst.buffer);
+          break;
+        }
+        case "dual": {
+          inst.dst.dual(inst.src);
+          break;
+        }
+        case "relu": {
+          inst.dst.relu(inst.src);
+          break;
+        }
+        case "cos": {
+          inst.dst.cos(inst.src);
+          break;
+        }
+        case "sin": {
+          inst.dst.sin(inst.src);
+          break;
+        }
+        case "cis": {
+          inst.dst.cis(inst.src);
+          break;
+        }
+        case "sic": {
+          inst.dst.sic(inst.src);
+          break;
+        }
+        case "sumk": {
+          inst.dst.sumk(inst.src, inst.k);
+          break;
+        }
+        case "randomUniform": {
+          inst.dst.randomUniform(inst.min, inst.max);
+          break;
+        }
+        case "add": {
+          inst.dst.add(inst.fst, inst.snd);
+          break;
+        }
+        case "mul": {
+          inst.dst.mul(inst.fst, inst.snd);
+          break;
+        }
+        case "point": {
+          inst.dst.point(inst.fst, inst.snd);
+          break;
+        }
+      }
     }
   }
 
   zero(shape: ShapeLike): Matrix {
     const dst = this.allocate(shape);
-    const thunk = () => {
-      const dst_buf = this.load(dst);
-      dst_buf.zero();
+    const run: RunOperator = {
+      opcode: "zero",
+      dst: this.load(dst),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   one(shape: ShapeLike): Matrix {
     const dst = this.allocate(shape);
-    const thunk = () => {
-      const dst_buf = this.load(dst);
-      dst_buf.one();
+    const run: RunOperator = {
+      opcode: "one",
+      dst: this.load(dst),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   constant(
     shape: ShapeLike,
-    buffer: number[] | Float32Array,
+    buffer: number[] | Float64Array,
   ): Matrix {
     const dst = this.allocate(shape);
-    const thunk = () => {
-      const dst_buf = this.load(dst);
-      dst_buf.buffer = new Float32Array(buffer);
+    const run: RunOperator = {
+      opcode: "constant",
+      dst: this.load(dst),
+      buffer,
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   dual(src: Matrix): Matrix {
     const dst = this.allocate(src.shape);
-    const thunk = () => {
-      const src_buf = this.load(src);
-      const dst_buf = this.load(dst);
-      dst_buf.dual(src_buf);
+    const run: RunOperator = {
+      opcode: "dual",
+      dst: this.load(dst),
+      src: this.load(src),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   relu(src: Matrix): Matrix {
     const dst = this.allocate(src.shape);
-    const thunk = () => {
-      const src_buf = this.load(src);
-      const dst_buf = this.load(dst);
-      dst_buf.relu(src_buf);
+    const run: RunOperator = {
+      opcode: "relu",
+      dst: this.load(dst),
+      src: this.load(src),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   cos(src: Matrix): Matrix {
     const dst = this.allocate(src.shape);
-    const thunk = () => {
-      const src_buf = this.load(src);
-      const dst_buf = this.load(dst);
-      dst_buf.cos(src_buf);
+    const run: RunOperator = {
+      opcode: "cos",
+      dst: this.load(dst),
+      src: this.load(src),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   sin(src: Matrix): Matrix {
     const dst = this.allocate(src.shape);
-    const thunk = () => {
-      const src_buf = this.load(src);
-      const dst_buf = this.load(dst);
-      dst_buf.sin(src_buf);
+    const run: RunOperator = {
+      opcode: "sin",
+      dst: this.load(dst),
+      src: this.load(src),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
-  
+
   cis(src: Matrix): Matrix {
     const dst = this.allocate(src.shape);
-    const thunk = () => {
-      const src_buf = this.load(src);
-      const dst_buf = this.load(dst);
-      dst_buf.cis(src_buf);
+    const run: RunOperator = {
+      opcode: "cis",
+      dst: this.load(dst),
+      src: this.load(src),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   sic(src: Matrix): Matrix {
     const dst = this.allocate(src.shape);
-    const thunk = () => {
-      const src_buf = this.load(src);
-      const dst_buf = this.load(dst);
-      dst_buf.sic(src_buf);
+    const run: RunOperator = {
+      opcode: "sic",
+      dst: this.load(dst),
+      src: this.load(src),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   sumk(src: Matrix, k: number): Matrix {
     const dst = this.allocate(src.shape);
-    const thunk = () => {
-      const src_buf = this.load(src);
-      const dst_buf = this.load(dst);
-      dst_buf.sumk(src_buf, k);
+    const run: RunOperator = {
+      opcode: "sumk",
+      dst: this.load(dst),
+      src: this.load(src),
+      k,
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
@@ -793,47 +914,49 @@ export class Env {
     max: number,
   ): Matrix {
     const dst = this.allocate(shape);
-    const thunk = () => {
-      const dst_buf = this.load(dst);
-      dst_buf.randomUniform(min, max);
+    const run: RunOperator = {
+      opcode: "randomUniform",
+      dst: this.load(dst),
+      min,
+      max,
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   add(fst: Matrix, snd: Matrix): Matrix {
     const dst = this.allocate(fst.shape);
-    const thunk = () => {
-      const fst_buf = this.load(fst);
-      const snd_buf = this.load(snd);
-      const dst_buf = this.load(dst);
-      dst_buf.add(fst_buf, snd_buf);
+    const run: RunOperator = {
+      opcode: "add",
+      dst: this.load(dst),
+      fst: this.load(fst),
+      snd: this.load(snd),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   mul(fst: Matrix, snd: Matrix): Matrix {
     const dst = this.allocate(fst.shape);
-    const thunk = () => {
-      const fst_buf = this.load(fst);
-      const snd_buf = this.load(snd);
-      const dst_buf = this.load(dst);
-      dst_buf.mul(fst_buf, snd_buf);
+    const run: RunOperator = {
+      opcode: "mul",
+      dst: this.load(dst),
+      fst: this.load(fst),
+      snd: this.load(snd),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 
   point(fst: Matrix, snd: Matrix): Matrix {
     const dst = this.allocate(fst.shape);
-    const thunk = () => {
-      const fst_buf = this.load(fst);
-      const snd_buf = this.load(snd);
-      const dst_buf = this.load(dst);
-      dst_buf.point(fst_buf, snd_buf);
+    const run: RunOperator = {
+      opcode: "point",
+      dst: this.load(dst),
+      fst: this.load(fst),
+      snd: this.load(snd),
     };
-    this.schedule(thunk);
+    this.schedule(run);
     return dst;
   }
 }
