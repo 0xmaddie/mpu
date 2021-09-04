@@ -4,7 +4,7 @@ import {
 
 import {
   MatrixBuffer,
-} from "./circuit.ts";
+} from "./mod.ts";
 
 type MatrixData =
   { shape: [number, number];
