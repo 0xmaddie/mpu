@@ -201,6 +201,10 @@ export class MatrixBuffer {
     }
     return true;
   }
+
+  toString(): string {
+    return `${this.shape} ${this.buffer}`;
+  }
 }
 
 export class ShapeError {
@@ -208,7 +212,10 @@ export class ShapeError {
   operator: string;
   buffer: MatrixBuffer[];
 
-  constructor(operator: string, ...buffer: MatrixBuffer[]) {
+  constructor(
+    operator: string,
+    ...buffer: MatrixBuffer[]
+  ) {
     this.operator = operator;
     this.buffer = buffer;
   }

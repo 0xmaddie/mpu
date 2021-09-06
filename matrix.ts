@@ -8,6 +8,8 @@ import {
   BufferLike,
 } from "./buffer.ts";
 
+let _runtime: MatrixRuntime | null = null;
+
 export class Matrix {
   _shape: Shape;
   _uid: number;
@@ -41,12 +43,120 @@ export class Matrix {
     return this._uid;
   }
 
-  get asMatrix(): Matrix {
-    return this;
+  get buffer(): MatrixBuffer {
+    if (_runtime) {
+      return _runtime.buffer(this);
+    }
+    throw new RuntimeError("buffer", this);
+  }
+
+  dual(): Matrix {
+    if (_runtime) {
+      return _runtime.dual(this);
+    }
+    throw new RuntimeError("dual", this);
+  }
+
+  cos(): Matrix {
+    if (_runtime) {
+      return _runtime.cos(this);
+    }
+    throw new RuntimeError("cos", this);
+  }
+
+  sin(): Matrix {
+    if (_runtime) {
+      return _runtime.sin(this);
+    }
+    throw new RuntimeError("sin", this);
+  }
+
+  cis(): Matrix {
+    if (_runtime) {
+      return _runtime.cis(this);
+    }
+    throw new RuntimeError("cis", this);
+  }
+
+  sic(): Matrix {
+    if (_runtime) {
+      return _runtime.sic(this);
+    }
+    throw new RuntimeError("sic", this);
+  }
+
+  relu(): Matrix {
+    if (_runtime) {
+      return _runtime.relu(this);
+    }
+    throw new RuntimeError("relu", this);
+  }
+
+  sumk(k: number): Matrix {
+    if (_runtime) {
+      return _runtime.sumk(this, k);
+    }
+    throw new RuntimeError("sumk", this);
+  }
+
+  add(rhs: Matrix): Matrix {
+    if (_runtime) {
+      return _runtime.add(this, rhs);
+    }
+    throw new RuntimeError("add", this, rhs);
+  }
+
+  mul(rhs: Matrix): Matrix {
+    if (_runtime) {
+      return _runtime.mul(this, rhs);
+    }
+    throw new RuntimeError("mul", this, rhs);
+  }
+
+  point(rhs: Matrix): Matrix {
+    if (_runtime) {
+      return _runtime.point(this, rhs);
+    }
+    throw new RuntimeError("point", this, rhs);
   }
 
   toString(): string {
     return `${this.height} ${this.width} ob_matrix`;
+  }
+
+  static zero(shape: Shape): Matrix {
+    if (_runtime) {
+      return _runtime.zero(shape);
+    }
+    throw new RuntimeError("zero");
+  }
+
+  static one(shape: Shape): Matrix {
+    if (_runtime) {
+      return _runtime.one(shape);
+    }
+    throw new RuntimeError("one");
+  }
+
+  static constant(
+    shape: ShapeLike,
+    value: BufferLike,
+  ): Matrix {
+    if (_runtime) {
+      return _runtime.constant(shape, value);
+    }
+    throw new RuntimeError("constant");
+  }
+
+  static randomUniform(
+    shape: ShapeLike,
+    min: number,
+    max: number,
+  ): Matrix {
+    if (_runtime) {
+      return _runtime.randomUniform(shape, min, max);
+    }
+    throw new RuntimeError("randomUniform");
   }
 }
 
@@ -69,11 +179,32 @@ export type RunOperator =
       fst: MatrixBuffer;
       snd: MatrixBuffer; };
 
-export class Env {
+export class MatrixRuntime {
   code: RunOperator[];
   data: MatrixBuffer[];
 
   constructor() {
+    this.code = [];
+    this.data = [];
+  }
+
+  acquire(): void {
+    if (!_runtime) {
+      _runtime = this;
+    } else {
+      throw "MatrixRuntime#acquire: already acquired";
+    }
+  }
+
+  release(): void {
+    if (_runtime === this) {
+      _runtime = null;
+    } else {
+      throw "MatrixRuntime#release: not acquired";
+    }
+  }
+
+  clear(): void {
     this.code = [];
     this.data = [];
   }
@@ -90,7 +221,7 @@ export class Env {
     this.code.push(run);
   }
 
-  load(pointer: Matrix): MatrixBuffer {
+  buffer(pointer: Matrix): MatrixBuffer {
     return this.data[pointer.uid];
   }
 
@@ -161,7 +292,7 @@ export class Env {
     const dst = this.allocate(shape);
     const run: RunOperator = {
       opcode: "zero",
-      dst: this.load(dst),
+      dst: this.buffer(dst),
     };
     this.schedule(run);
     return dst;
@@ -171,7 +302,7 @@ export class Env {
     const dst = this.allocate(shape);
     const run: RunOperator = {
       opcode: "one",
-      dst: this.load(dst),
+      dst: this.buffer(dst),
     };
     this.schedule(run);
     return dst;
@@ -182,21 +313,24 @@ export class Env {
     buffer: BufferLike,
   ): Matrix {
     const dst = this.allocate(shape);
+    dst.buffer.set(buffer);
+    /**
     const run: RunOperator = {
       opcode: "constant",
-      dst: this.load(dst),
+      dst: this.buffer(dst),
       buffer,
     };
     this.schedule(run);
+    **/
     return dst;
   }
 
   dual(src: Matrix): Matrix {
-    const dst = this.allocate(src.shape);
+    const dst = this.allocate([src.width, src.height]);
     const run: RunOperator = {
       opcode: "dual",
-      dst: this.load(dst),
-      src: this.load(src),
+      dst: this.buffer(dst),
+      src: this.buffer(src),
     };
     this.schedule(run);
     return dst;
@@ -206,8 +340,8 @@ export class Env {
     const dst = this.allocate(src.shape);
     const run: RunOperator = {
       opcode: "relu",
-      dst: this.load(dst),
-      src: this.load(src),
+      dst: this.buffer(dst),
+      src: this.buffer(src),
     };
     this.schedule(run);
     return dst;
@@ -217,8 +351,8 @@ export class Env {
     const dst = this.allocate(src.shape);
     const run: RunOperator = {
       opcode: "cos",
-      dst: this.load(dst),
-      src: this.load(src),
+      dst: this.buffer(dst),
+      src: this.buffer(src),
     };
     this.schedule(run);
     return dst;
@@ -228,8 +362,8 @@ export class Env {
     const dst = this.allocate(src.shape);
     const run: RunOperator = {
       opcode: "sin",
-      dst: this.load(dst),
-      src: this.load(src),
+      dst: this.buffer(dst),
+      src: this.buffer(src),
     };
     this.schedule(run);
     return dst;
@@ -239,8 +373,8 @@ export class Env {
     const dst = this.allocate(src.shape);
     const run: RunOperator = {
       opcode: "cis",
-      dst: this.load(dst),
-      src: this.load(src),
+      dst: this.buffer(dst),
+      src: this.buffer(src),
     };
     this.schedule(run);
     return dst;
@@ -250,8 +384,8 @@ export class Env {
     const dst = this.allocate(src.shape);
     const run: RunOperator = {
       opcode: "sic",
-      dst: this.load(dst),
-      src: this.load(src),
+      dst: this.buffer(dst),
+      src: this.buffer(src),
     };
     this.schedule(run);
     return dst;
@@ -261,8 +395,8 @@ export class Env {
     const dst = this.allocate(src.shape);
     const run: RunOperator = {
       opcode: "sumk",
-      dst: this.load(dst),
-      src: this.load(src),
+      dst: this.buffer(dst),
+      src: this.buffer(src),
       k,
     };
     this.schedule(run);
@@ -277,7 +411,7 @@ export class Env {
     const dst = this.allocate(shape);
     const run: RunOperator = {
       opcode: "randomUniform",
-      dst: this.load(dst),
+      dst: this.buffer(dst),
       min,
       max,
     };
@@ -289,21 +423,21 @@ export class Env {
     const dst = this.allocate(fst.shape);
     const run: RunOperator = {
       opcode: "add",
-      dst: this.load(dst),
-      fst: this.load(fst),
-      snd: this.load(snd),
+      dst: this.buffer(dst),
+      fst: this.buffer(fst),
+      snd: this.buffer(snd),
     };
     this.schedule(run);
     return dst;
   }
 
   mul(fst: Matrix, snd: Matrix): Matrix {
-    const dst = this.allocate(fst.shape);
+    const dst = this.allocate([fst.height, snd.width]);
     const run: RunOperator = {
       opcode: "mul",
-      dst: this.load(dst),
-      fst: this.load(fst),
-      snd: this.load(snd),
+      dst: this.buffer(dst),
+      fst: this.buffer(fst),
+      snd: this.buffer(snd),
     };
     this.schedule(run);
     return dst;
@@ -313,11 +447,28 @@ export class Env {
     const dst = this.allocate(fst.shape);
     const run: RunOperator = {
       opcode: "point",
-      dst: this.load(dst),
-      fst: this.load(fst),
-      snd: this.load(snd),
+      dst: this.buffer(dst),
+      fst: this.buffer(fst),
+      snd: this.buffer(snd),
     };
     this.schedule(run);
     return dst;
+  }
+}
+
+export class RuntimeError {
+  operator: string;
+  args: Matrix[];
+  
+  constructor(
+    operator: string,
+    ...args: Matrix[]
+  ) {
+    this.operator = operator;
+    this.args = args;
+  }
+
+  toString(): string {
+    return `Attempted to call operator ${this.operator} with no runtime present.`;
   }
 }
