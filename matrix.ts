@@ -310,18 +310,10 @@ export class MatrixRuntime {
 
   constant(
     shape: ShapeLike,
-    buffer: BufferLike,
+    value: BufferLike,
   ): Matrix {
     const dst = this.allocate(shape);
-    dst.buffer.set(buffer);
-    /**
-    const run: RunOperator = {
-      opcode: "constant",
-      dst: this.buffer(dst),
-      buffer,
-    };
-    this.schedule(run);
-    **/
+    dst.buffer.buffer.set(value);
     return dst;
   }
 

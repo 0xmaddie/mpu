@@ -49,10 +49,8 @@ export class MatrixBuffer {
     }
   }
 
-  set(values: BufferLike): void {
-    for (let i = 0; i < values.length; ++i) {
-      this.buffer[i] = values[i];
-    }
+  set(row: number, col: number, value: number): void {
+    this.buffer[row*this.width+col] = value;
   }
 
   randomUniform(min: number, max: number): void {
