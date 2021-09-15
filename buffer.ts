@@ -49,6 +49,10 @@ export class MatrixBuffer {
     }
   }
 
+  get(row: number, col: number): number {
+    return this.buffer[row*this.width+col];
+  }
+
   set(row: number, col: number, value: number): void {
     this.buffer[row*this.width+col] = value;
   }
